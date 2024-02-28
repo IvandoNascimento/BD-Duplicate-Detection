@@ -1,79 +1,62 @@
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import KMeans
 import pandas as pd
 import numpy as np
 
+
 # Carregar os dados dos arquivos CSV
 buy = pd.read_csv('base/Buy.csv')
-abt = pd.read_csv('base/Abt.csv')
+abt = pd.read_csv('base/Abt.csv', encoding_errors='ignore')
+goalDf = pd.read_csv('base/abt_buy_perfectMapping.csv')
 
-# Preencher valores nulos na coluna de preço com a média
-buy['price'] = pd.to_numeric(buy['price'], errors='coerce')
-buy['price'].fillna(buy['price'].mean(), inplace=True)
-abt['price'] = pd.to_numeric(abt['price'], errors='coerce')
-abt['price'].fillna(abt['price'].mean(), inplace=True)
+vectorizer = TfidfVectorizer()
+
+# Remover colunas desnecessárias
+buy = buy.drop(columns=[ 'manufacturer', 'price'])
+abt = abt.drop(columns=['price'])
 
 # Substituir valores nulos nas colunas de texto por uma string vazia
-buy['name'].fillna('', inplace=True)
-buy['description'].fillna('', inplace=True)
-abt['name'].fillna('', inplace=True)
-abt['description'].fillna('', inplace=True)
-
-# Tokenização e Vetorização para Buy.csv
-tfidf_vectorizer_buy = TfidfVectorizer()
-tfidf_matrix_buy = tfidf_vectorizer_buy.fit_transform(
-    buy['name'] + ' ' + buy['description'])
-
-# Cálculo da Similaridade de Cosseno para Buy.csv
-cosine_sim_buy = cosine_similarity(tfidf_matrix_buy, tfidf_matrix_buy)
-
-# Definição de um limiar de similaridade
-threshold = 0.8
-
-# Identificação de Duplicatas em Buy.csv
-duplicates_buy = []
-for i in range(len(cosine_sim_buy)):
-    for j in range(i+1, len(cosine_sim_buy[i])):
-        if cosine_sim_buy[i][j] > threshold:
-            duplicates_buy.append(
-                (buy.iloc[i]['name'], buy.iloc[i]['description'], buy.iloc[j]['name'], buy.iloc[j]['description']))
-
-# Tokenização e Vetorização para Abt.csv
-tfidf_vectorizer_abt = TfidfVectorizer()
-tfidf_matrix_abt = tfidf_vectorizer_abt.fit_transform(
-    abt['name'] + ' ' + abt['description'])
-
-# Cálculo da Similaridade de Cosseno para Abt.csv
-cosine_sim_abt = cosine_similarity(tfidf_matrix_abt, tfidf_matrix_abt)
-
-# Identificação de Duplicatas em Abt.csv
-duplicates_abt = []
-for i in range(len(cosine_sim_abt)):
-    for j in range(i+1, len(cosine_sim_abt[i])):
-        if cosine_sim_abt[i][j] > threshold:
-            duplicates_abt.append(
-                (abt.iloc[i]['name'], abt.iloc[i]['description'], abt.iloc[j]['name'], abt.iloc[j]['description']))
-
-# Função para exibir um par de duplicatas de forma mais legível
+buy.fillna({'name': '', 'description': ''}, inplace=True)
+abt.fillna({'name': '', 'description': ''}, inplace=True)
 
 
-def print_pair(pair):
-    print("Duplicata 1:")
-    print("Nome: " + pair[0])
-    print("Descrição: " + pair[1])
-    print("\n")
-    print("Duplicata 2:")
-    print("Nome: " + pair[2])
-    print("Descrição: " + pair[3])
-    print("\n")
+combined = pd.concat([buy, abt], ignore_index=True)
+combined = combined.sort_values(by=['name'])
+clusters = 450
+kmeans = KMeans(n_clusters=clusters, max_iter=20000, algorithm='elkan')
+matrixc = vectorizer.fit_transform(combined['name'] + ' ' + combined['description'])
+kmeans.fit(matrixc)
+combined['Cluster'] = kmeans.labels_
+print(combined[:5])
+print(combined.loc[combined['id'] == 10011646])
+print(combined.loc[combined['id'] == 38477])
+
+# get the all the items that are in the same cluster
+duplicatesTrue = []
+duplicatesFalse= []
+for i in range(clusters):
+
+    items = combined.loc[combined['Cluster'] == i]
+    
+    #print(items)
+    if(items.__len__() > 1):
+        print('cluster:',i)
+        items_ids = items['id'].to_list()
+        for j in range(len(goalDf)):
+            if(goalDf.iloc[j]['idAbt'] in items_ids and goalDf.iloc[j]['idBuy'] in items_ids):
+                duplicatesTrue.append(items)
+                print(items_ids)
+                print(goalDf.iloc[j])
+            
+        duplicatesFalse.append(items)
+
+lenTrue = len(duplicatesTrue)
+lenFalse = len(duplicatesFalse)
+lenGoal = 1098
+print(len(duplicatesTrue), len(duplicatesFalse))
+print('total', lenTrue+lenFalse)
+print('%', lenTrue/lenGoal*100)
 
 
-# Visualização das Duplicatas em Buy.csv
-print("Duplicatas em Buy.csv Identificadas:")
-for pair in duplicates_buy:
-    print_pair(pair)
-
-# Visualização das Duplicatas em Abt.csv
-print("\nDuplicatas em Abt.csv Identificadas:")
-for pair in duplicates_abt:
-    print_pair(pair)
+exit()
